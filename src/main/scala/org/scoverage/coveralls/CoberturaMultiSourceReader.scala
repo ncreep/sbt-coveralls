@@ -27,9 +27,9 @@ class CoberturaMultiSourceReader(coberturaFile: File, sourceDirs: Seq[File], enc
    *         It returns false if child and parent points to the same directory
    */
   def isChild(child: File, parent: File): Boolean = {
-    val childPath = child.toURI.getPath
-    val parentPath = parent.toURI.getPath
-    childPath != parentPath && childPath.startsWith(parentPath)
+    val childURI = child.toURI
+    val parentURI = parent.toURI
+    (child != parent) && parentURI.relativize(childURI) != childURI
   }
 
   val reportXML = XML.loadFile(coberturaFile)

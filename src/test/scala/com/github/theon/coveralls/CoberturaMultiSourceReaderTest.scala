@@ -49,8 +49,19 @@ class CoberturaMultiSourceReaderTest extends WordSpec with BeforeAndAfterAll wit
       reader.isChild(root, srcFoo) shouldBe false
       reader.isChild(fileFoo, srcFoo) shouldBe true
       reader.isChild(srcFoo, fileFoo) shouldBe false
-      //catches mistakes with substrings
-      reader.isChild(new File(root, "srcB-2.10"), srcFoo) shouldBe false
+    }
+
+    "not be use 'startsWith' to check parent/child relationships" in {
+      val child = new File(root, "abc-2.10")
+      // should be a path that wasn't used previously, since otherwise it will be treated as 'abc/'
+      // and 'startsWith' will produce 'false' and fail the test
+      val parent = new File(root, "abc")
+
+      val childPath = child.toURI.getPath
+      val parentPath = parent.toURI.getPath
+
+      childPath.startsWith(parentPath) shouldBe true
+      reader.isChild(child, parent) shouldBe false
     }
   }
 
