@@ -5,7 +5,7 @@ import _root_.sbt.ThisProject
 import com.fasterxml.jackson.core.JsonEncoding
 import sbt.Keys._
 import sbt._
-import scala.io.{ Codec, Source }
+import scala.io.{Codec, Source}
 import java.io.File
 
 object Imports {
@@ -28,6 +28,7 @@ object CoverallsPlugin extends AutoPlugin {
   override def trigger = allRequirements
 
   val autoImport = Imports
+
   import autoImport._
   import CoverallsKeys._
 
@@ -53,6 +54,8 @@ object CoverallsPlugin extends AutoPlugin {
 
   def coverallsTask = Def.task {
     val log = streams.value.log
+    val failBuildOnError = coverallsFailBuildOnError.value
+    val logOrFail = makeLogOrFail(failBuildOnError, log) _
     val extracted = Project.extract(state.value)
     implicit val pr = extracted.currentRef
     implicit val bs = extracted.structure
@@ -93,45 +96,43 @@ object CoverallsPlugin extends AutoPlugin {
 
     val report = CoberturaFile(coberturaFile.value, baseDirectory.value)
     if (!report.exists) {
-      sys.error("Could not find the cobertura.xml file. Did you call coverageAggregate?")
-    }
+      logOrFail("Could not find the cobertura.xml file. Did you call coverageAggregate?")
+    } else {
 
-    // include all of the sources (stanard roots and multi-module roots)
-    val sources: Seq[File] = (sourceDirectories in Compile).value
-    val multiSources: Seq[File] = coverallsSourceRoots.value.flatten
-    val allSources = sources ++ multiSources
+      // include all of the sources (standard roots and multi-module roots)
+      val sources: Seq[File] = (sourceDirectories in Compile).value
+      val multiSources: Seq[File] = coverallsSourceRoots.value.flatten
+      val allSources = sources ++ multiSources
 
-    val reader = new CoberturaMultiSourceReader(report.file, allSources, sourcesEnc)
-    val sourceFiles = reader.sourceFilenames
+      val reader = new CoberturaMultiSourceReader(report.file, allSources, sourcesEnc)
+      val sourceFiles = reader.sourceFilenames
 
-    sourceFiles.foreach(sourceFile => {
-      val sourceReport = reader.reportForSource(sourceFile)
-      writer.addSourceFile(sourceReport)
-    })
+      sourceFiles.foreach(sourceFile => {
+        val sourceReport = reader.reportForSource(sourceFile)
+        writer.addSourceFile(sourceReport)
+      })
 
-    writer.end()
+      writer.end()
 
-    val res = coverallsClient.postFile(coverallsFile.value)
-    val failBuildOnError = coverallsFailBuildOnError.value
+      val res = coverallsClient.postFile(coverallsFile.value)
 
-    if (res.error) {
-      val errorMessage =
-        s"""
+      if (res.error) {
+        val errorMessage =
+          s"""
            |Uploading to $endpoint failed: ${res.message}
            |${
-          if (res.message.contains(CoverallsClient.tokenErrorString))
-            s"The error message '${CoverallsClient.tokenErrorString}' can mean your repo token is incorrect."
-          else ""
-        }
+            if (res.message.contains(CoverallsClient.tokenErrorString))
+              s"The error message '${CoverallsClient.tokenErrorString}' can mean your repo token is incorrect."
+            else ""
+          }
          """.stripMargin
-      if (failBuildOnError)
-        sys.error(errorMessage)
-      else
-        log.error(errorMessage)
-    } else {
-      log.info(s"Uploading to $endpoint succeeded: " + res.message)
-      log.info(res.url)
-      log.info("(results may not appear immediately)")
+
+        logOrFail(errorMessage)
+      } else {
+        log.info(s"Uploading to $endpoint succeeded: " + res.message)
+        log.info(res.url)
+        log.info("(results may not appear immediately)")
+      }
     }
   }
 
@@ -158,6 +159,13 @@ object CoverallsPlugin extends AutoPlugin {
   def userEndpoint(coverallsEndpoint: Option[String]) =
     sys.env.get("COVERALLS_ENDPOINT")
       .orElse(coverallsEndpoint)
+
+  private def makeLogOrFail(failBuildOnError: Boolean, log: Logger)(errorMessage: String) = {
+    if (failBuildOnError)
+      sys.error(errorMessage)
+    else
+      log.error(errorMessage)
+  }
 }
 
 case class CoberturaFile(file: File, projectBase: File) {
